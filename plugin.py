@@ -64,7 +64,7 @@ Version:    0.0.1: alpha
         See domoticz wiki above.<br/> 
     </description>
     <params>
-        <param field="Address" label="Domoticz IP Address" width="200px" required="true" default="localhost"/>
+        <param field="Address" label="Domoticz IP Address" width="200px" required="true" default="127.0.0.1"/>
         <param field="Port" label="Port" width="40px" required="true" default="8080"/>
         <param field="Username" label="Username" width="200px" required="false" default=""/>
         <param field="Password" label="Password" width="200px" required="false" default=""/>
@@ -101,7 +101,6 @@ from datetime import datetime, timedelta
 import time
 import base64
 import itertools
-from distutils.version import LooseVersion
 
 class deviceparam:
 
@@ -151,7 +150,6 @@ class BasePlugin:
         self.nextupdate = self.endheat
         self.nexttemps = self.endheat
         self.learn = True
-        self.domoticzInfo = {}
         return
 
 
@@ -191,7 +189,7 @@ class BasePlugin:
                             Options=Options, Used=1).Create()
             devicecreated.append(deviceparam(2, 0, "10"))  # default is normal mode
         if 3 not in Devices:
-            Domoticz.Device(Name="Thermostat Pause", Unit=3, TypeName="Switch", Image=9, Used=1).Create()
+            Domoticz.Device(Name="Pause", Unit=3, TypeName="Switch", Image=9, Used=1).Create()
             devicecreated.append(deviceparam(3, 0, ""))  # default is Off
         if 4 not in Devices:
             Domoticz.Device(Name="Setpoint Normal", Unit=4, Type=242, Subtype=1, Used=1).Create()
@@ -200,8 +198,14 @@ class BasePlugin:
             Domoticz.Device(Name="Setpoint Economy", Unit=5, Type=242, Subtype=1, Used=1).Create()
             devicecreated.append(deviceparam(5 ,0, "20"))  # default is 20 degrees
         if 6 not in Devices:
-            Domoticz.Device(Name="Thermostat temp", Unit=6, TypeName="Temperature").Create()
+            Domoticz.Device(Name="AVG Temperature", Unit=6, TypeName="Temperature").Create()
             devicecreated.append(deviceparam(6, 0, "20"))  # default is 20 degrees
+        if 7 not in Devices:
+            Domoticz.Device(Name="Heating", Unit=7, TypeName="Switch", Image=15, Used=1).Create()
+            devicecreated.append(deviceparam(7, 0, ""))  # default is Off
+        if 8 not in Devices:
+            Domoticz.Device(Name="Wall Sensor", Unit=8, TypeName="Temp+Hum+Baro", Used=1).Create()
+            devicecreated.append(deviceparam(8, 0, "20"))  # default is 20 degrees
 
         # if any device has been created in onStart(), now is time to update its defaults
         for device in devicecreated:
@@ -267,6 +271,15 @@ class BasePlugin:
             else:
                 nvalue = 0
                 self.pauserequested = False
+        # modyfikacja aby mozna bylo zalaczac virtualny switch, bez tego nie mozna
+        elif Unit ==7:
+            svalue = ""
+            if str(Command) == "On":
+                nvalue = 1
+                svalue= "On"
+            else:
+                nvalue = 0
+                svalue= "Off"
         else:
             nvalue = 1 if Level > 0 else 0
             svalue = str(Level)
@@ -557,25 +570,8 @@ class BasePlugin:
             if novar:
                 # create user variable since it does not exist
                 self.WriteLog("User Variable {} does not exist. Creation requested".format(varname), "Verbose")
-
-                #check for Domoticz version:
-                # there is a breaking change on dzvents_version 2.4.9, API was changed from 'saveuservariable' to 'adduservariable'
-                # using 'saveuservariable' on latest versions returns a "status = 'ERR'" error
-
-                # get a status of the actual running Domoticz instance, set the parameter accordigly
-                parameter = "saveuservariable"
-                domoticzInfo = DomoticzAPI("type=command&param=getversion")
-                if domoticzInfo is None:
-                    Domoticz.Error("Unable to fetch Domoticz info... unable to determine version")
-                else:
-                    if (domoticzInfo and LooseVersion(domoticzInfo["dzvents_version"]) >= LooseVersion("2.4.9")):
-                        self.WriteLog("Use 'adduservariable' instead of 'saveuservariable'", "Verbose")
-                        parameter = "adduservariable"
-                
-                # actually calling Domoticz API
-                DomoticzAPI("type=command&param={}&vname={}&vtype=2&vvalue={}".format(
-                    parameter, varname, str(self.InternalsDefaults)))
-                
+                DomoticzAPI("type=command&param=saveuservariable&vname={}&vtype=2&vvalue={}".format(
+                    varname, str(self.InternalsDefaults)))
                 self.Internals = self.InternalsDefaults.copy()  # we re-initialize the internal variables
             else:
                 try:
